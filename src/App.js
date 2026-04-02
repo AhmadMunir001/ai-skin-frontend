@@ -4,390 +4,413 @@ import axios from "axios";
 const BASE_URL = "https://ai-skin-backend-a64v.onrender.com";
 const ANALYZE_URL = `${BASE_URL}/api/analyze-skin`;
 
+// ── History helpers ──────────────────────────────────
+const HISTORY_KEY = "dermiq_history";
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+  catch { return []; }
+}
+function saveToHistory(entry) {
+  const hist = loadHistory();
+  hist.unshift(entry);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(hist.slice(0, 20)));
+}
+
+// ── Constants ────────────────────────────────────────
 const COLORS = {
   low:    { bg: "#e8f5e9", text: "#2e7d32", bar: "#66bb6a" },
   medium: { bg: "#fff8e1", text: "#f57f17", bar: "#ffca28" },
   high:   { bg: "#fce4ec", text: "#c62828", bar: "#ef5350" },
 };
-
 const METRIC_ICONS = {
   acne: "🔴", oiliness: "✨", dryness: "🏜️",
   pigmentation: "🌑", sensitivity: "🌸",
 };
-
-
-
 function severityPercent(label) {
   return label === "low" ? 20 : label === "medium" ? 55 : 88;
 }
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-PK", { day: "numeric", month: "short", year: "numeric" })
+    + " · " + d.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });
+}
 
+// ── Styles ───────────────────────────────────────────
 const globalStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=DM+Sans:wght@300;400;500&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
   :root {
-    --cream: #faf7f2;
-    --warm-white: #fffef9;
-    --rose: #c4776a;
-    --rose-light: #f0cfc9;
-    --rose-dark: #8b3a2f;
-    --sage: #7a9e7e;
-    --sage-light: #d4e8d6;
-    --gold: #c9a84c;
-    --gold-light: #f5e6c0;
-    --ink: #1a1208;
-    --muted: #7a6e62;
-    --border: #e8e0d4;
+    --cream: #faf7f2; --warm-white: #fffef9;
+    --rose: #c4776a; --rose-light: #f0cfc9; --rose-dark: #8b3a2f;
+    --sage: #7a9e7e; --sage-light: #d4e8d6;
+    --gold: #c9a84c; --gold-light: #f5e6c0;
+    --ink: #1a1208; --muted: #7a6e62; --border: #e8e0d4;
     --shadow: 0 4px 24px rgba(26,18,8,0.08);
-    --shadow-lg: 0 12px 48px rgba(26,18,8,0.12);
   }
+  body { font-family: 'DM Sans', sans-serif; background: var(--cream); color: var(--ink); min-height: 100vh; }
+  .app { max-width: 760px; margin: 0 auto; padding: 0 0 80px; }
 
-  body {
-    font-family: 'DM Sans', sans-serif;
-    background: var(--cream);
-    color: var(--ink);
-    min-height: 100vh;
-  }
-
-  .app {
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 0 0 80px;
-  }
-
-  /* HERO HEADER */
-  .hero {
-    background: linear-gradient(160deg, #1a1208 0%, #3d2b1a 50%, #5c3d2a 100%);
-    padding: 52px 40px 44px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-  }
-  .hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse at 60% 40%, rgba(196,119,106,0.18) 0%, transparent 70%);
-  }
-  .hero-eyebrow {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 11px;
-    letter-spacing: 4px;
-    text-transform: uppercase;
-    color: var(--gold);
-    opacity: 0.9;
-    margin-bottom: 14px;
-  }
-  .hero-title {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 48px;
-    font-weight: 300;
-    color: var(--warm-white);
-    line-height: 1.1;
-    letter-spacing: -0.5px;
-    margin-bottom: 10px;
-  }
+  /* HERO */
+  .hero { background: linear-gradient(160deg, #1a1208 0%, #3d2b1a 50%, #5c3d2a 100%); padding: 44px 40px 36px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 60% 40%, rgba(196,119,106,0.18) 0%, transparent 70%); }
+  .hero-eyebrow { font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: var(--gold); opacity: 0.9; margin-bottom: 10px; }
+  .hero-title { font-family: 'Cormorant Garamond', serif; font-size: 44px; font-weight: 300; color: #fffef9; line-height: 1.1; margin-bottom: 8px; }
   .hero-title span { color: var(--rose-light); font-style: italic; }
-  .hero-sub {
-    font-size: 13px;
-    color: rgba(255,255,255,0.5);
-    letter-spacing: 0.5px;
-  }
+  .hero-sub { font-size: 13px; color: rgba(255,255,255,0.5); }
 
-  /* UPLOAD ZONE */
-  .upload-section {
-    padding: 36px 32px 28px;
-    background: var(--warm-white);
-    border-bottom: 1px solid var(--border);
-  }
-  .upload-label {
-    font-size: 11px;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 16px;
-    display: block;
-  }
-  .upload-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-  .upload-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding: 18px 12px;
-    border: 1.5px dashed var(--border);
-    border-radius: 12px;
-    background: var(--cream);
-    cursor: pointer;
-    transition: all 0.2s;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 0.5px;
-    position: relative;
-    overflow: hidden;
-  }
+  /* TAB NAV */
+  .tab-nav { display: flex; background: var(--warm-white); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+  .tab-btn { flex: 1; padding: 14px 12px; border: none; background: none; font-family: 'DM Sans', sans-serif; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); cursor: pointer; transition: all 0.2s; border-bottom: 2px solid transparent; position: relative; }
+  .tab-btn:hover { color: var(--rose); }
+  .tab-btn.active { color: var(--rose-dark); border-bottom-color: var(--rose); font-weight: 500; }
+  .tab-badge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--rose); color: white; font-size: 10px; margin-left: 6px; font-weight: 600; }
+
+  /* UPLOAD SECTION */
+  .upload-section { padding: 32px 32px 24px; background: var(--warm-white); border-bottom: 1px solid var(--border); }
+  .upload-label { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; display: block; }
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+  .upload-btn { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 12px; border: 1.5px dashed var(--border); border-radius: 12px; background: var(--cream); cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif; font-size: 11px; color: var(--muted); letter-spacing: 0.5px; position: relative; overflow: hidden; }
   .upload-btn:hover { border-color: var(--rose); color: var(--rose-dark); background: #fdf5f3; }
   .upload-btn.active { border-color: var(--rose); background: #fdf5f3; color: var(--rose-dark); border-style: solid; }
   .upload-btn .icon { font-size: 22px; }
-  .upload-btn input[type="file"] {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
-  }
-
-  .file-ready {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 16px; background: var(--sage-light);
-    border-radius: 8px; font-size: 13px; color: #2e5e32;
-    margin-bottom: 16px;
-  }
+  .upload-btn input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .file-ready { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--sage-light); border-radius: 8px; font-size: 13px; color: #2e5e32; margin-bottom: 14px; }
 
   /* CAMERA */
-  .camera-view {
-    border-radius: 12px; overflow: hidden;
-    border: 2px solid var(--rose-light);
-    margin-bottom: 12px;
-    position: relative;
-  }
+  .camera-view { border-radius: 12px; overflow: hidden; border: 2px solid var(--rose-light); margin-bottom: 12px; position: relative; }
   .camera-view video { display: block; width: 100%; }
-  .camera-overlay {
-    position: absolute; inset: 0;
-    border: 2px solid rgba(196,119,106,0.4);
-    border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%;
-    margin: 10% 20%;
-    pointer-events: none;
-  }
-  .camera-controls { display: flex; gap: 10px; }
+  .camera-overlay { position: absolute; inset: 0; border: 2px solid rgba(196,119,106,0.4); border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%; margin: 10% 20%; pointer-events: none; }
+  .camera-controls { display: flex; gap: 10px; margin-bottom: 16px; }
 
-  /* ANALYZE BUTTON */
-  .analyze-btn {
-    width: 100%;
-    padding: 18px;
-    background: linear-gradient(135deg, #c4776a, #8b3a2f);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: all 0.3s;
-    position: relative;
-    overflow: hidden;
-  }
-  .analyze-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #d4877a, #9b4a3f);
-    transform: translateY(-1px);
-    box-shadow: 0 8px 24px rgba(196,119,106,0.4);
-  }
+  /* ANALYZE BTN */
+  .analyze-btn { width: 100%; padding: 18px; background: linear-gradient(135deg, #c4776a, #8b3a2f); color: white; border: none; border-radius: 12px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all 0.3s; }
+  .analyze-btn:hover:not(:disabled) { background: linear-gradient(135deg, #d4877a, #9b4a3f); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(196,119,106,0.4); }
   .analyze-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .status-bar { text-align: center; padding: 12px; font-size: 13px; color: var(--muted); font-style: italic; }
 
-  .status-bar {
-    text-align: center; padding: 12px;
-    font-size: 13px; color: var(--muted);
-    font-style: italic;
-  }
-
-  /* LOADING PULSE */
-  .loading-dots span {
-    display: inline-block;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--rose);
-    margin: 0 3px;
-    animation: pulse 1.4s ease-in-out infinite;
-  }
+  /* LOADING */
+  .loading-dots span { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: white; margin: 0 3px; animation: pulse 1.4s ease-in-out infinite; }
   .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
   .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes pulse {
-    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-    40% { transform: scale(1); opacity: 1; }
-  }
+  @keyframes pulse { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
 
   /* RESULTS */
   .results { padding: 0 32px; }
+  .skin-summary-card { margin: 24px 0 20px; padding: 24px 28px; background: linear-gradient(135deg, #1a1208 0%, #3d2b1a 100%); border-radius: 16px; color: white; position: relative; overflow: hidden; }
+  .skin-summary-card::after { content: '✦'; position: absolute; right: 24px; top: 20px; font-size: 32px; opacity: 0.1; }
+  .summary-eyebrow { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--gold); margin-bottom: 8px; }
+  .summary-text { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 400; line-height: 1.4; color: #fffef9; }
+  .confidence-badge { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 12px; background: rgba(255,255,255,0.1); border-radius: 20px; font-size: 12px; color: rgba(255,255,255,0.7); }
+  .confidence-dot { width: 8px; height: 8px; border-radius: 50%; }
 
-  .skin-summary-card {
-    margin: 28px 0 24px;
-    padding: 24px 28px;
-    background: linear-gradient(135deg, #1a1208 0%, #3d2b1a 100%);
-    border-radius: 16px;
-    color: white;
-    position: relative;
-    overflow: hidden;
-  }
-  .skin-summary-card::after {
-    content: '✦';
-    position: absolute; right: 24px; top: 20px;
-    font-size: 32px; opacity: 0.1;
-  }
-  .summary-eyebrow {
-    font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
-    color: var(--gold); margin-bottom: 8px;
-  }
-  .summary-text {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 22px; font-weight: 400; line-height: 1.4;
-    color: var(--warm-white);
-  }
-  .confidence-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    margin-top: 14px; padding: 6px 12px;
-    background: rgba(255,255,255,0.1);
-    border-radius: 20px; font-size: 12px; color: rgba(255,255,255,0.7);
-  }
-  .confidence-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-  }
-
-  /* SECTION HEADERS */
-  .section-header {
-    display: flex; align-items: center; gap: 10px;
-    margin: 32px 0 16px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--border);
-  }
-  .section-header h2 {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 22px; font-weight: 500; color: var(--ink);
-  }
+  /* SECTIONS */
+  .section-header { display: flex; align-items: center; gap: 10px; margin: 28px 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .section-header h2 { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 500; }
   .section-icon { font-size: 20px; }
 
-  /* METRIC CARDS */
-  .metrics-grid {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 12px; margin-bottom: 8px;
-  }
-  .metric-card {
-    padding: 18px 20px;
-    background: var(--warm-white);
-    border-radius: 14px;
-    border: 1px solid var(--border);
-    transition: transform 0.2s;
-  }
+  /* METRICS */
+  .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+  .metric-card { padding: 16px 18px; background: var(--warm-white); border-radius: 14px; border: 1px solid var(--border); transition: transform 0.2s; }
   .metric-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
-  .metric-top {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 10px;
-  }
-  .metric-name {
-    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
-    color: var(--muted);
-  }
-  .metric-badge {
-    padding: 3px 10px; border-radius: 20px;
-    font-size: 11px; font-weight: 500; text-transform: capitalize;
-    letter-spacing: 0.5px;
-  }
-  .metric-bar-track {
-    height: 5px; background: var(--border); border-radius: 3px; overflow: hidden;
-  }
-  .metric-bar-fill {
-    height: 100%; border-radius: 3px;
-    transition: width 1s ease-out;
-  }
+  .metric-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .metric-name { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+  .metric-badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; text-transform: capitalize; }
+  .metric-bar-track { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .metric-bar-fill { height: 100%; border-radius: 3px; transition: width 1s ease-out; }
 
-  /* ROUTINE CARDS */
-  .routine-card {
-    background: var(--warm-white); border-radius: 16px;
-    border: 1px solid var(--border); overflow: hidden;
-    margin-bottom: 16px;
-  }
-  .routine-header {
-    padding: 16px 20px;
-    background: linear-gradient(90deg, #fdf5f3, #fff8f6);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 10px;
-  }
-  .routine-header h3 {
-    font-family: 'Cormorant Garamond', serif;
-    font-size: 18px; font-weight: 500;
-  }
-  .routine-steps { padding: 8px 0; }
-  .routine-step {
-    display: flex; align-items: flex-start; gap: 14px;
-    padding: 12px 20px;
-    border-bottom: 1px solid #f5f0ea;
-    transition: background 0.15s;
-  }
+  /* ROUTINE */
+  .routine-card { background: var(--warm-white); border-radius: 16px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; }
+  .routine-steps { padding: 4px 0; }
+  .routine-step { display: flex; align-items: flex-start; gap: 14px; padding: 12px 20px; border-bottom: 1px solid #f5f0ea; transition: background 0.15s; }
   .routine-step:last-child { border-bottom: none; }
   .routine-step:hover { background: #fdf9f5; }
-  .step-num {
-    min-width: 26px; height: 26px;
-    background: var(--rose-light); color: var(--rose-dark);
-    border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 600; flex-shrink: 0; margin-top: 1px;
-  }
-  .step-text { font-size: 14px; line-height: 1.5; color: var(--ink); }
+  .step-num { min-width: 26px; height: 26px; background: var(--rose-light); color: var(--rose-dark); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; margin-top: 1px; }
+  .step-text { font-size: 14px; line-height: 1.5; }
 
-  /* WEEKLY TREATMENTS */
-  .treatment-pill {
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 16px; margin-bottom: 8px;
-    background: var(--gold-light); border-radius: 10px;
-    font-size: 13px; color: #5a4010;
-    border-left: 3px solid var(--gold);
-  }
+  /* WEEKLY */
+  .treatment-pill { display: flex; align-items: center; gap: 10px; padding: 12px 16px; margin-bottom: 8px; background: var(--gold-light); border-radius: 10px; font-size: 13px; color: #5a4010; border-left: 3px solid var(--gold); }
 
   /* INFO CARDS */
-  .info-card {
-    padding: 18px 20px; border-radius: 14px;
-    margin-bottom: 12px; font-size: 14px; line-height: 1.6;
-  }
+  .info-card { padding: 16px 18px; border-radius: 14px; margin-bottom: 12px; font-size: 14px; line-height: 1.6; }
   .info-card strong { display: block; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
-
-  /* INGREDIENT CHIPS */
   .chips-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-  .chip {
-    padding: 5px 12px; border-radius: 20px;
-    font-size: 12px; font-weight: 500;
-  }
+  .chip { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
   .chip-green { background: var(--sage-light); color: #2e5e32; }
-  .chip-red   { background: #fce4ec; color: #8b1a1a; }
+  .chip-red { background: #fce4ec; color: #8b1a1a; }
+  .warning-banner { display: flex; align-items: flex-start; gap: 10px; padding: 14px 18px; background: #fff8e1; border-radius: 10px; border-left: 3px solid var(--gold); font-size: 13px; color: #5a4010; margin-bottom: 10px; }
 
-  /* WARNINGS */
-  .warning-banner {
-    display: flex; align-items: flex-start; gap: 10px;
-    padding: 14px 18px; background: #fff8e1;
-    border-radius: 10px; border-left: 3px solid var(--gold);
-    font-size: 13px; color: #5a4010; margin-bottom: 10px;
-  }
+  /* HISTORY PAGE */
+  .history-page { padding: 24px 32px; }
+  .history-empty { text-align: center; padding: 60px 20px; }
+  .history-empty-icon { font-size: 48px; margin-bottom: 16px; }
+  .history-empty-title { font-family: 'Cormorant Garamond', serif; font-size: 24px; color: var(--ink); margin-bottom: 8px; }
+  .history-empty-sub { font-size: 14px; color: var(--muted); }
+  .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .history-title { font-family: 'Cormorant Garamond', serif; font-size: 28px; font-weight: 400; }
+  .clear-btn { padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; background: none; font-family: 'DM Sans', sans-serif; font-size: 12px; color: var(--muted); cursor: pointer; transition: all 0.2s; }
+  .clear-btn:hover { border-color: #ef5350; color: #ef5350; }
+
+  .history-card { background: var(--warm-white); border-radius: 16px; border: 1px solid var(--border); margin-bottom: 16px; overflow: hidden; transition: box-shadow 0.2s; cursor: pointer; }
+  .history-card:hover { box-shadow: var(--shadow); }
+  .history-card-header { padding: 16px 20px; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border); }
+  .history-date { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .history-summary { font-family: 'Cormorant Garamond', serif; font-size: 17px; font-weight: 400; color: var(--ink); line-height: 1.3; }
+  .history-conf { font-size: 11px; padding: 4px 10px; border-radius: 20px; background: var(--cream); color: var(--muted); white-space: nowrap; margin-top: 4px; }
+  .history-metrics { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px 20px; }
+  .history-metric-chip { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; text-transform: capitalize; }
+  .history-card-footer { padding: 10px 20px; background: var(--cream); display: flex; justify-content: space-between; align-items: center; }
+  .history-expand { font-size: 12px; color: var(--rose); cursor: pointer; letter-spacing: 0.5px; }
+  .history-detail { padding: 0 20px 16px; border-top: 1px solid var(--border); display: none; }
+  .history-detail.open { display: block; }
 
   /* BUTTONS */
-  .btn-sm {
-    padding: 10px 18px; border-radius: 8px; border: 1.5px solid var(--border);
-    background: var(--warm-white); font-family: 'DM Sans', sans-serif;
-    font-size: 13px; cursor: pointer; transition: all 0.2s;
-  }
+  .btn-sm { padding: 10px 18px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--warm-white); font-family: 'DM Sans', sans-serif; font-size: 13px; cursor: pointer; transition: all 0.2s; }
   .btn-sm:hover { border-color: var(--rose); color: var(--rose-dark); }
-  .btn-primary-sm {
-    background: var(--rose); color: white; border-color: var(--rose);
-  }
+  .btn-primary-sm { background: var(--rose); color: white; border-color: var(--rose); }
   .btn-primary-sm:hover { background: var(--rose-dark); border-color: var(--rose-dark); color: white; }
 
   @media (max-width: 520px) {
-    .hero { padding: 40px 24px 32px; }
+    .hero { padding: 36px 20px 28px; }
     .hero-title { font-size: 36px; }
-    .upload-section, .results { padding-left: 20px; padding-right: 20px; }
+    .upload-section, .results, .history-page { padding-left: 20px; padding-right: 20px; }
     .metrics-grid { grid-template-columns: 1fr; }
     .upload-grid { grid-template-columns: 1fr 1fr; }
   }
 `;
 
+// ── History Card Component ───────────────────────────
+function HistoryCard({ entry, index }) {
+  const [open, setOpen] = useState(false);
+  const sa = entry.skin_analysis || {};
+  const routine = entry.routine || {};
+  const conf = sa.confidence ?? 1;
+  const confColor = conf >= 0.7 ? "#66bb6a" : conf >= 0.4 ? "#ffca28" : "#ef5350";
+
+  return (
+    <div className="history-card">
+      <div className="history-card-header" onClick={() => setOpen(!open)}>
+        <div style={{ flex: 1 }}>
+          <div className="history-date">📅 {formatDate(entry.timestamp)}</div>
+          <div className="history-summary">
+            {routine.skin_type_summary || "Skin analysis completed"}
+          </div>
+        </div>
+        <div style={{ textAlign: "right", marginLeft: 12 }}>
+          <div className="history-conf">
+            <span style={{ color: confColor }}>●</span> {Math.round(conf * 100)}% confidence
+          </div>
+        </div>
+      </div>
+
+      <div className="history-metrics">
+        {["acne", "oiliness", "dryness", "pigmentation", "sensitivity"].map(k => {
+          const val = sa[k];
+          if (!val) return null;
+          const c = COLORS[val] || COLORS.medium;
+          return (
+            <span key={k} className="history-metric-chip"
+              style={{ background: c.bg, color: c.text }}>
+              {METRIC_ICONS[k]} {k}: {val}
+            </span>
+          );
+        })}
+      </div>
+
+      <div className="history-card-footer">
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>
+          Scan #{index + 1}
+        </span>
+        <span className="history-expand" onClick={() => setOpen(!open)}>
+          {open ? "▲ Hide routine" : "▼ View routine"}
+        </span>
+      </div>
+
+      <div className={`history-detail ${open ? "open" : ""}`}>
+        {routine.morning_routine?.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
+              🌅 Morning Routine
+            </div>
+            {routine.morning_routine.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 6, fontSize: 13 }}>
+                <span style={{ minWidth: 20, height: 20, background: "var(--rose-light)", color: "var(--rose-dark)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600 }}>{i + 1}</span>
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+        {routine.night_routine?.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
+              🌙 Night Routine
+            </div>
+            {routine.night_routine.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, marginBottom: 6, fontSize: 13 }}>
+                <span style={{ minWidth: 20, height: 20, background: "var(--rose-light)", color: "var(--rose-dark)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 600 }}>{i + 1}</span>
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+        {routine.natural_remedy && (
+          <div style={{ marginTop: 12, padding: "10px 14px", background: "#f0fff4", borderRadius: 8, fontSize: 13 }}>
+            🌿 <strong>Remedy:</strong> {routine.natural_remedy}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Results Renderer (shared) ────────────────────────
+function ResultsView({ result }) {
+  const sa = result?.skin_analysis || {};
+  const routine = result?.routine || {};
+  const conf = sa.confidence ?? 1;
+  const confColor = conf >= 0.7 ? "#66bb6a" : conf >= 0.4 ? "#ffca28" : "#ef5350";
+
+  return (
+    <div className="results">
+      {routine.skin_type_summary && (
+        <div className="skin-summary-card">
+          <div className="summary-eyebrow">Your Skin Profile</div>
+          <div className="summary-text">{routine.skin_type_summary}</div>
+          <div className="confidence-badge">
+            <div className="confidence-dot" style={{ background: confColor }} />
+            Analysis confidence: {Math.round(conf * 100)}%
+          </div>
+        </div>
+      )}
+
+      {sa.warnings?.length > 0 && sa.warnings.map((w, i) => (
+        <div className="warning-banner" key={i}>⚠️ {w}</div>
+      ))}
+
+      <div className="section-header"><span className="section-icon">🔬</span><h2>Skin Metrics</h2></div>
+      <div className="metrics-grid">
+        {["acne","oiliness","dryness","pigmentation","sensitivity"].map(key => {
+          const val = sa[key];
+          if (!val) return null;
+          const c = COLORS[val] || COLORS.medium;
+          return (
+            <div className="metric-card" key={key}>
+              <div className="metric-top">
+                <span className="metric-name">{METRIC_ICONS[key]} {key}</span>
+                <span className="metric-badge" style={{ background: c.bg, color: c.text }}>{val}</span>
+              </div>
+              <div className="metric-bar-track">
+                <div className="metric-bar-fill" style={{ width: `${severityPercent(val)}%`, background: c.bar }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {routine.morning_routine?.length > 0 && (
+        <>
+          <div className="section-header"><span className="section-icon">🌅</span><h2>Morning Routine</h2></div>
+          <div className="routine-card">
+            <div className="routine-steps">
+              {routine.morning_routine.map((step, i) => (
+                <div className="routine-step" key={i}>
+                  <div className="step-num">{i + 1}</div>
+                  <div className="step-text">{step}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {routine.night_routine?.length > 0 && (
+        <>
+          <div className="section-header"><span className="section-icon">🌙</span><h2>Night Routine</h2></div>
+          <div className="routine-card">
+            <div className="routine-steps">
+              {routine.night_routine.map((step, i) => (
+                <div className="routine-step" key={i}>
+                  <div className="step-num">{i + 1}</div>
+                  <div className="step-text">{step}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {routine.weekly_treatments?.length > 0 && (
+        <>
+          <div className="section-header"><span className="section-icon">📅</span><h2>Weekly Treatments</h2></div>
+          {routine.weekly_treatments.map((t, i) => (
+            <div className="treatment-pill" key={i}>✦ {t}</div>
+          ))}
+        </>
+      )}
+
+      <div className="section-header"><span className="section-icon">🌿</span><h2>Natural Care</h2></div>
+      {routine.natural_remedy && (
+        <div className="info-card" style={{ background: "#f0fff4", border: "1px solid #c3e6cb" }}>
+          <strong style={{ color: "#2e7d32" }}>Natural Remedy</strong>{routine.natural_remedy}
+        </div>
+      )}
+      {routine.food && (
+        <div className="info-card" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
+          <strong style={{ color: "#f57f17" }}>Food Tips</strong>{routine.food}
+        </div>
+      )}
+      {routine.hydration && (
+        <div className="info-card" style={{ background: "#e3f2fd", border: "1px solid #90caf9" }}>
+          <strong style={{ color: "#1565c0" }}>Hydration</strong>{routine.hydration}
+        </div>
+      )}
+
+      {(routine.ingredients_to_use?.length > 0 || routine.ingredients_to_avoid?.length > 0) && (
+        <>
+          <div className="section-header"><span className="section-icon">🧴</span><h2>Ingredients Guide</h2></div>
+          {routine.ingredients_to_use?.length > 0 && (
+            <div className="info-card" style={{ background: "#d4e8d6", border: "1px solid #c3e6cb", marginBottom: 10 }}>
+              <strong style={{ color: "#2e7d32" }}>✓ Look For</strong>
+              <div className="chips-row">
+                {routine.ingredients_to_use.map((ing, i) => <span className="chip chip-green" key={i}>{ing}</span>)}
+              </div>
+            </div>
+          )}
+          {routine.ingredients_to_avoid?.length > 0 && (
+            <div className="info-card" style={{ background: "#fce4ec", border: "1px solid #f48fb1" }}>
+              <strong style={{ color: "#c62828" }}>✗ Avoid</strong>
+              <div className="chips-row">
+                {routine.ingredients_to_avoid.map((ing, i) => <span className="chip chip-red" key={i}>{ing}</span>)}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {routine.note && (
+        <div className="info-card" style={{ background: "#fce4ec", border: "1px solid #f48fb1", marginTop: 8 }}>
+          <strong style={{ color: "#8b1a1a" }}>📝 Note</strong>{routine.note}
+        </div>
+      )}
+
+      {sa.retake_required && (
+        <div className="warning-banner" style={{ marginTop: 16 }}>
+          📷 For better results, retake your photo in natural daylight facing the camera directly.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── MAIN APP ─────────────────────────────────────────
 export default function App() {
+  const [tab, setTab] = useState("analyze"); // "analyze" | "history"
   const [file, setFile] = useState(null);
-  const [fileType, setFileType] = useState(null); // 'image' | 'video'
+  const [fileType, setFileType] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [cameraOn, setCameraOn] = useState(false);
+  const [history, setHistory] = useState(loadHistory);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -397,19 +420,24 @@ export default function App() {
   useEffect(() => {
     if (cameraOn && videoRef.current && pendingStreamRef.current) {
       videoRef.current.srcObject = pendingStreamRef.current;
+      videoRef.current.play().catch(() => {});
       pendingStreamRef.current = null;
     }
   }, [cameraOn]);
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
       streamRef.current = stream;
-      pendingStreamRef.current = stream;
-      setCameraOn(true);
-    } catch (err) {
-      alert("Camera access denied: " + err.message);
-    }
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+        setCameraOn(true);
+      } else {
+        pendingStreamRef.current = stream;
+        setCameraOn(true);
+      }
+    } catch (err) { alert("Camera access denied: " + err.message); }
   };
 
   const stopCamera = () => {
@@ -448,6 +476,11 @@ export default function App() {
         setResult(res.data);
         setStatus("");
         setLoading(false);
+
+        // Save to history
+        const entry = { ...res.data, timestamp: new Date().toISOString() };
+        saveToHistory(entry);
+        setHistory(loadHistory());
         return;
       } catch (err) {
         if (attempt < 3) {
@@ -461,10 +494,12 @@ export default function App() {
     }
   };
 
-  const sa = result?.skin_analysis || {};
-  const routine = result?.routine || {};
-  const conf = sa.confidence ?? 1;
-  const confColor = conf >= 0.7 ? "#66bb6a" : conf >= 0.4 ? "#ffca28" : "#ef5350";
+  const handleClearHistory = () => {
+    if (window.confirm("Clear all scan history?")) {
+      localStorage.removeItem("dermiq_history");
+      setHistory([]);
+    }
+  };
 
   return (
     <>
@@ -474,244 +509,92 @@ export default function App() {
         {/* HERO */}
         <div className="hero">
           <div className="hero-eyebrow">AI-Powered · K-Beauty Science</div>
-          <h1 className="hero-title">Skin <span>Analysis</span></h1>
+          <h1 className="hero-title">Derm<span>iq</span></h1>
           <p className="hero-sub">Personalized skincare for South Asian skin</p>
         </div>
 
-        {/* UPLOAD SECTION */}
-        <div className="upload-section">
-          <span className="upload-label">Upload or Capture</span>
-
-          <div className="upload-grid">
-            {/* Image upload */}
-            <label className={`upload-btn ${fileType === "image" && file ? "active" : ""}`}>
-              <span className="icon">🖼️</span>
-              <span>Photo</span>
-              <input type="file" accept="image/*"
-                onChange={e => { setFile(e.target.files[0]); setFileType("image"); }} />
-            </label>
-
-            {/* Video upload */}
-            <label className={`upload-btn ${fileType === "video" && file ? "active" : ""}`}>
-              <span className="icon">🎥</span>
-              <span>Video</span>
-              <input type="file" accept="video/*"
-                onChange={e => { setFile(e.target.files[0]); setFileType("video"); }} />
-            </label>
-
-            {/* Camera */}
-            <button className={`upload-btn ${cameraOn ? "active" : ""}`}
-              onClick={cameraOn ? stopCamera : startCamera}>
-              <span className="icon">📷</span>
-              <span>{cameraOn ? "Close" : "Camera"}</span>
-            </button>
-          </div>
-
-          {/* Camera view */}
-          {cameraOn && (
-            <div style={{ marginBottom: 16 }}>
-              <div className="camera-view">
-                <video ref={videoRef} autoPlay playsInline style={{ width: "100%" }} />
-                <div className="camera-overlay" />
-              </div>
-              <div className="camera-controls">
-                <button className="btn-sm btn-primary-sm" onClick={captureImage}>📸 Capture</button>
-                <button className="btn-sm" onClick={stopCamera}>✕ Close</button>
-              </div>
-            </div>
-          )}
-
-          <canvas ref={canvasRef} style={{ display: "none" }} />
-
-          {file && !cameraOn && (
-            <div className="file-ready">
-              <span>✅</span>
-              <span>{file.name} — ready to analyze</span>
-            </div>
-          )}
-
-          <button className="analyze-btn" onClick={() => handleAnalyze(fileType === "video")} disabled={loading}>
-            {loading
-              ? <span className="loading-dots"><span/><span/><span/></span>
-              : "✦  ANALYZE MY SKIN"}
+        {/* TAB NAV */}
+        <div className="tab-nav">
+          <button className={`tab-btn ${tab === "analyze" ? "active" : ""}`} onClick={() => setTab("analyze")}>
+            ✦ Analyze
           </button>
-
-          {status && <div className="status-bar">{status}</div>}
+          <button className={`tab-btn ${tab === "history" ? "active" : ""}`} onClick={() => setTab("history")}>
+            History
+            {history.length > 0 && <span className="tab-badge">{history.length}</span>}
+          </button>
         </div>
 
-        {/* RESULTS */}
-        {result && (
-          <div className="results">
-
-            {/* Skin Summary Banner */}
-            {routine.skin_type_summary && (
-              <div className="skin-summary-card">
-                <div className="summary-eyebrow">Your Skin Profile</div>
-                <div className="summary-text">{routine.skin_type_summary}</div>
-                <div className="confidence-badge">
-                  <div className="confidence-dot" style={{ background: confColor }} />
-                  Analysis confidence: {Math.round(conf * 100)}%
-                </div>
+        {/* ── ANALYZE TAB ── */}
+        {tab === "analyze" && (
+          <>
+            <div className="upload-section">
+              <span className="upload-label">Upload or Capture</span>
+              <div className="upload-grid">
+                <label className={`upload-btn ${fileType === "image" && file ? "active" : ""}`}>
+                  <span className="icon">🖼️</span><span>Photo</span>
+                  <input type="file" accept="image/*" onChange={e => { setFile(e.target.files[0]); setFileType("image"); }} />
+                </label>
+                <label className={`upload-btn ${fileType === "video" && file ? "active" : ""}`}>
+                  <span className="icon">🎥</span><span>Video</span>
+                  <input type="file" accept="video/*" onChange={e => { setFile(e.target.files[0]); setFileType("video"); }} />
+                </label>
+                <button className={`upload-btn ${cameraOn ? "active" : ""}`} onClick={cameraOn ? stopCamera : startCamera}>
+                  <span className="icon">📷</span><span>{cameraOn ? "Close" : "Camera"}</span>
+                </button>
               </div>
-            )}
 
-            {/* Warnings */}
-            {sa.warnings?.length > 0 && sa.warnings.map((w, i) => (
-              <div className="warning-banner" key={i}>⚠️ {w}</div>
-            ))}
-
-            {/* Metrics */}
-            <div className="section-header">
-              <span className="section-icon">🔬</span>
-              <h2>Skin Metrics</h2>
-            </div>
-            <div className="metrics-grid">
-              {["acne","oiliness","dryness","pigmentation","sensitivity"].map(key => {
-                const val = sa[key];
-                if (!val) return null;
-                const c = COLORS[val] || COLORS.medium;
-                return (
-                  <div className="metric-card" key={key}>
-                    <div className="metric-top">
-                      <span className="metric-name">{METRIC_ICONS[key]} {key}</span>
-                      <span className="metric-badge" style={{ background: c.bg, color: c.text }}>
-                        {val}
-                      </span>
-                    </div>
-                    <div className="metric-bar-track">
-                      <div className="metric-bar-fill"
-                        style={{ width: `${severityPercent(val)}%`, background: c.bar }} />
-                    </div>
+              {cameraOn && (
+                <div>
+                  <div className="camera-view">
+                    <video ref={videoRef} autoPlay playsInline style={{ width: "100%" }} />
+                    <div className="camera-overlay" />
                   </div>
-                );
-              })}
+                  <div className="camera-controls">
+                    <button className="btn-sm btn-primary-sm" onClick={captureImage}>📸 Capture</button>
+                    <button className="btn-sm" onClick={stopCamera}>✕ Close</button>
+                  </div>
+                </div>
+              )}
+
+              <canvas ref={canvasRef} style={{ display: "none" }} />
+
+              {file && !cameraOn && (
+                <div className="file-ready"><span>✅</span><span>{file.name} — ready to analyze</span></div>
+              )}
+
+              <button className="analyze-btn" onClick={() => handleAnalyze(fileType === "video")} disabled={loading}>
+                {loading ? <span className="loading-dots"><span/><span/><span/></span> : "✦  ANALYZE MY SKIN"}
+              </button>
+              {status && <div className="status-bar">{status}</div>}
             </div>
 
-            {/* Morning Routine */}
-            {routine.morning_routine?.length > 0 && (
-              <>
-                <div className="section-header">
-                  <span className="section-icon">🌅</span>
-                  <h2>Morning Routine</h2>
-                </div>
-                <div className="routine-card">
-                  <div className="routine-steps">
-                    {routine.morning_routine.map((step, i) => (
-                      <div className="routine-step" key={i}>
-                        <div className="step-num">{i + 1}</div>
-                        <div className="step-text">{step}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+            {result && <ResultsView result={result} />}
+          </>
+        )}
 
-            {/* Night Routine */}
-            {routine.night_routine?.length > 0 && (
+        {/* ── HISTORY TAB ── */}
+        {tab === "history" && (
+          <div className="history-page">
+            {history.length === 0 ? (
+              <div className="history-empty">
+                <div className="history-empty-icon">🧴</div>
+                <div className="history-empty-title">No scans yet</div>
+                <div className="history-empty-sub">Your past analyses will appear here after your first scan.</div>
+              </div>
+            ) : (
               <>
-                <div className="section-header">
-                  <span className="section-icon">🌙</span>
-                  <h2>Night Routine</h2>
+                <div className="history-header">
+                  <div className="history-title">Past Scans</div>
+                  <button className="clear-btn" onClick={handleClearHistory}>🗑 Clear all</button>
                 </div>
-                <div className="routine-card">
-                  <div className="routine-steps">
-                    {routine.night_routine.map((step, i) => (
-                      <div className="routine-step" key={i}>
-                        <div className="step-num">{i + 1}</div>
-                        <div className="step-text">{step}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Weekly Treatments */}
-            {routine.weekly_treatments?.length > 0 && (
-              <>
-                <div className="section-header">
-                  <span className="section-icon">📅</span>
-                  <h2>Weekly Treatments</h2>
-                </div>
-                {routine.weekly_treatments.map((t, i) => (
-                  <div className="treatment-pill" key={i}>✦ {t}</div>
+                {history.map((entry, i) => (
+                  <HistoryCard key={i} entry={entry} index={i} />
                 ))}
               </>
             )}
-
-            {/* Natural + Food + Hydration */}
-            <div className="section-header">
-              <span className="section-icon">🌿</span>
-              <h2>Natural Care</h2>
-            </div>
-
-            {routine.natural_remedy && (
-              <div className="info-card" style={{ background: "#f0fff4", border: "1px solid #c3e6cb" }}>
-                <strong style={{ color: "#2e7d32" }}>Natural Remedy</strong>
-                {routine.natural_remedy}
-              </div>
-            )}
-            {routine.food && (
-              <div className="info-card" style={{ background: "#fff8e1", border: "1px solid #ffe082" }}>
-                <strong style={{ color: "#f57f17" }}>Food Tips</strong>
-                {routine.food}
-              </div>
-            )}
-            {routine.hydration && (
-              <div className="info-card" style={{ background: "#e3f2fd", border: "1px solid #90caf9" }}>
-                <strong style={{ color: "#1565c0" }}>Hydration</strong>
-                {routine.hydration}
-              </div>
-            )}
-
-            {/* Ingredients */}
-            {(routine.ingredients_to_use?.length > 0 || routine.ingredients_to_avoid?.length > 0) && (
-              <>
-                <div className="section-header">
-                  <span className="section-icon">🧴</span>
-                  <h2>Ingredients Guide</h2>
-                </div>
-                {routine.ingredients_to_use?.length > 0 && (
-                  <div className="info-card" style={{ background: "#d4e8d6", border: "1px solid #c3e6cb", marginBottom: 10 }}>
-                    <strong style={{ color: "#2e7d32" }}>✓ Look For</strong>
-                    <div className="chips-row">
-                      {routine.ingredients_to_use.map((ing, i) => (
-                        <span className="chip chip-green" key={i}>{ing}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {routine.ingredients_to_avoid?.length > 0 && (
-                  <div className="info-card" style={{ background: "#fce4ec", border: "1px solid #f48fb1" }}>
-                    <strong style={{ color: "#c62828" }}>✗ Avoid</strong>
-                    <div className="chips-row">
-                      {routine.ingredients_to_avoid.map((ing, i) => (
-                        <span className="chip chip-red" key={i}>{ing}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Note */}
-            {routine.note && (
-              <div className="info-card" style={{ background: "#fce4ec", border: "1px solid #f48fb1", marginTop: 8 }}>
-                <strong style={{ color: "#8b1a1a" }}>📝 Note</strong>
-                {routine.note}
-              </div>
-            )}
-
-            {/* Retake prompt */}
-            {sa.retake_required && (
-              <div className="warning-banner" style={{ marginTop: 16 }}>
-                📷 For better results, retake your photo in natural daylight facing the camera directly.
-              </div>
-            )}
-
           </div>
         )}
+
       </div>
     </>
   );
