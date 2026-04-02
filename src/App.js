@@ -15,12 +15,7 @@ const METRIC_ICONS = {
   pigmentation: "🌑", sensitivity: "🌸",
 };
 
-const METRIC_MAX = {
-  acne: { low: 0.02, high: 0.08, unit: "ratio" },
-  oiliness: { low: 20, high: 45, unit: "score" },
-  dryness: { low: 0.8, high: 2.5, unit: "score" },
-  pigmentation: { low: 8, high: 18, unit: "score" },
-};
+
 
 function severityPercent(label) {
   return label === "low" ? 20 : label === "medium" ? 55 : 88;
