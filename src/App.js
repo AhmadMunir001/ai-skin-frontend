@@ -117,6 +117,15 @@ const globalStyles = `
   .section-header h2 { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 500; }
   .section-icon { font-size: 20px; }
 
+  /* CLINICAL METRICS */
+  .clinical-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+  .clinical-card { padding: 18px 16px; background: var(--warm-white); border-radius: 14px; border: 1px solid var(--border); text-align: center; transition: transform 0.2s; }
+  .clinical-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .clinical-icon { font-size: 24px; margin-bottom: 8px; }
+  .clinical-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .clinical-value { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 500; color: var(--ink); text-transform: capitalize; margin-bottom: 4px; }
+  .clinical-sub { font-size: 11px; color: var(--muted); }
+
   /* METRICS */
   .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
   .metric-card { padding: 16px 18px; background: var(--warm-white); border-radius: 14px; border: 1px solid var(--border); transition: transform 0.2s; }
@@ -314,6 +323,64 @@ function ResultsView({ result }) {
           );
         })}
       </div>
+
+      {/* ── Clinical Metrics ── */}
+      {(sa.skin_tone || sa.redness || sa.pore_size || sa.skin_zone_type) && (
+        <>
+          <div className="section-header"><span className="section-icon">🧬</span><h2>Clinical Report</h2></div>
+          <div className="clinical-grid">
+
+            {sa.skin_tone && (
+              <div className="clinical-card">
+                <div className="clinical-icon">🎨</div>
+                <div className="clinical-label">Skin Tone (ITA)</div>
+                <div className="clinical-value">{sa.skin_tone}</div>
+                {sa.ita_angle !== undefined && (
+                  <div className="clinical-sub">ITA angle: {sa.ita_angle}°</div>
+                )}
+              </div>
+            )}
+
+            {sa.redness && (
+              <div className="clinical-card">
+                <div className="clinical-icon">🌡️</div>
+                <div className="clinical-label">Redness Index</div>
+                <div className="clinical-value" style={{
+                  color: sa.redness === "high" ? "#c62828" : sa.redness === "medium" ? "#f57f17" : "#2e7d32"
+                }}>{sa.redness}</div>
+                {sa.redness_index !== undefined && (
+                  <div className="clinical-sub">R/G ratio: {sa.redness_index}</div>
+                )}
+              </div>
+            )}
+
+            {sa.pore_size && (
+              <div className="clinical-card">
+                <div className="clinical-icon">🔍</div>
+                <div className="clinical-label">Pore Size</div>
+                <div className="clinical-value" style={{
+                  color: sa.pore_size === "enlarged" ? "#c62828" : sa.pore_size === "moderate" ? "#f57f17" : "#2e7d32"
+                }}>{sa.pore_size}</div>
+                {sa.scores?.pore_score !== undefined && (
+                  <div className="clinical-sub">Score: {sa.scores.pore_score}</div>
+                )}
+              </div>
+            )}
+
+            {sa.skin_zone_type && sa.skin_zone_type !== "unknown" && (
+              <div className="clinical-card">
+                <div className="clinical-icon">🗺️</div>
+                <div className="clinical-label">Skin Zone</div>
+                <div className="clinical-value" style={{ textTransform: "capitalize" }}>{sa.skin_zone_type}</div>
+                {sa.zones?.tzone_oiliness !== null && sa.zones?.tzone_oiliness !== undefined && (
+                  <div className="clinical-sub">T-zone: {sa.zones.tzone_oiliness} · U-zone: {sa.zones.uzone_dryness}</div>
+                )}
+              </div>
+            )}
+
+          </div>
+        </>
+      )}
 
       {routine.morning_routine?.length > 0 && (
         <>
