@@ -80,6 +80,15 @@ const globalStyles = `
   .camera-view { border-radius: 12px; overflow: hidden; border: 2px solid var(--rose-light); margin-bottom: 12px; position: relative; }
   .camera-view video { display: block; width: 100%; }
   .camera-overlay { position: absolute; inset: 0; border: 2px solid rgba(196,119,106,0.4); border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%; margin: 10% 20%; pointer-events: none; }
+  .camera-overlay.recording { border-color: rgba(239,83,80,0.8); animation: pulse-ring 1s ease-in-out infinite; }
+  @keyframes pulse-ring { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+  .countdown-circle { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 80px; height: 80px; border-radius: 50%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-size: 42px; color: white; font-weight: 300; pointer-events: none; }
+  .rec-dot { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 20px; font-size: 12px; color: white; }
+  .rec-dot-icon { width: 8px; height: 8px; border-radius: 50%; background: #ef5350; animation: blink 1s ease-in-out infinite; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+  .camera-mode-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+  .mode-btn { flex: 1; padding: 8px; border: 1.5px solid var(--border); border-radius: 8px; background: var(--cream); font-family: 'DM Sans', sans-serif; font-size: 12px; cursor: pointer; transition: all 0.2s; color: var(--muted); }
+  .mode-btn.active { background: var(--rose); color: white; border-color: var(--rose); }
   .camera-controls { display: flex; gap: 10px; margin-bottom: 16px; }
 
   /* ANALYZE BTN */
@@ -410,12 +419,17 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [cameraOn, setCameraOn] = useState(false);
+  const [cameraMode, setCameraMode] = useState("photo"); // "photo" | "video"
+  const [recording, setRecording] = useState(false);
+  const [countdown, setCountdown] = useState(null);
   const [history, setHistory] = useState(loadHistory);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const pendingStreamRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
 
   useEffect(() => {
     if (cameraOn && videoRef.current && pendingStreamRef.current) {
@@ -457,6 +471,49 @@ export default function App() {
       setFileType("image");
       stopCamera();
     }, "image/jpeg");
+  };
+
+  const startLiveRecording = () => {
+    if (!streamRef.current) return;
+    recordedChunksRef.current = [];
+
+    // Pick supported mime type
+    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm", "video/mp4"]
+      .find(m => MediaRecorder.isTypeSupported(m)) || "";
+
+    const recorder = new MediaRecorder(streamRef.current, mimeType ? { mimeType } : {});
+    mediaRecorderRef.current = recorder;
+
+    recorder.ondataavailable = e => {
+      if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+    };
+
+    recorder.onstop = () => {
+      const blob = new Blob(recordedChunksRef.current, { type: mimeType || "video/webm" });
+      const videoFile = new File([blob], "skin_scan.webm", { type: blob.type });
+      setFile(videoFile);
+      setFileType("video");
+      stopCamera();
+      setRecording(false);
+      setCountdown(null);
+    };
+
+    // 5-second countdown then auto-stop
+    let secs = 5;
+    setCountdown(secs);
+    setRecording(true);
+    recorder.start(100);
+
+    const tick = setInterval(() => {
+      secs -= 1;
+      if (secs <= 0) {
+        clearInterval(tick);
+        setCountdown(0);
+        recorder.stop();
+      } else {
+        setCountdown(secs);
+      }
+    }, 1000);
   };
 
   const handleAnalyze = async (isVideo = false) => {
@@ -545,13 +602,44 @@ export default function App() {
 
               {cameraOn && (
                 <div>
+                  {/* Mode toggle */}
+                  <div className="camera-mode-toggle">
+                    <button className={`mode-btn ${cameraMode === "photo" ? "active" : ""}`}
+                      onClick={() => setCameraMode("photo")} disabled={recording}>
+                      📷 Photo
+                    </button>
+                    <button className={`mode-btn ${cameraMode === "video" ? "active" : ""}`}
+                      onClick={() => setCameraMode("video")} disabled={recording}>
+                      🎥 5s Video Scan
+                    </button>
+                  </div>
+
                   <div className="camera-view">
                     <video ref={videoRef} autoPlay playsInline style={{ width: "100%" }} />
-                    <div className="camera-overlay" />
+                    <div className={`camera-overlay ${recording ? "recording" : ""}`} />
+
+                    {/* Countdown overlay */}
+                    {recording && countdown !== null && countdown > 0 && (
+                      <div className="countdown-circle">{countdown}</div>
+                    )}
+                    {recording && (
+                      <div className="rec-dot">
+                        <div className="rec-dot-icon" />
+                        {countdown > 0 ? `${countdown}s` : "Saving…"}
+                      </div>
+                    )}
                   </div>
+
                   <div className="camera-controls">
-                    <button className="btn-sm btn-primary-sm" onClick={captureImage}>📸 Capture</button>
-                    <button className="btn-sm" onClick={stopCamera}>✕ Close</button>
+                    {cameraMode === "photo" ? (
+                      <button className="btn-sm btn-primary-sm" onClick={captureImage}>📸 Capture Photo</button>
+                    ) : (
+                      <button className="btn-sm btn-primary-sm"
+                        onClick={startLiveRecording} disabled={recording}>
+                        {recording ? `⏺ Recording… ${countdown}s` : "⏺ Start 5s Scan"}
+                      </button>
+                    )}
+                    <button className="btn-sm" onClick={stopCamera} disabled={recording}>✕ Close</button>
                   </div>
                 </div>
               )}
