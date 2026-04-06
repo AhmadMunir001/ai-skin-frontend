@@ -531,7 +531,6 @@ export default function App() {
   const [fileType, setFileType] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("");
   const [loadingStep, setLoadingStep] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -662,13 +661,12 @@ export default function App() {
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        setStatus(`Analyzing… attempt ${attempt}/3 (free tier may take 30–60s)`);
+        setLoadingStep(0);
         const res = await axios.post(endpoint, formData, {
           headers: { "Content-Type": "multipart/form-data" },
           timeout: isVideo ? 300000 : 180000,
         });
         setResult(res.data);
-        setStatus("");
         setLoading(false);
 
         // Save to history
@@ -678,10 +676,9 @@ export default function App() {
         return;
       } catch (err) {
         if (attempt < 3) {
-          setStatus(`Attempt ${attempt} timed out. Retrying in 5s…`);
           await new Promise(r => setTimeout(r, 5000));
         } else {
-          setLoading(false); setStatus("");
+          setLoading(false);
           alert(err.response ? JSON.stringify(err.response.data) : "All attempts failed. Check your connection.");
         }
       }
