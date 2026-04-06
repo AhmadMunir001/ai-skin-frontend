@@ -601,7 +601,11 @@ export default function App() {
     const canvas = canvasRef.current;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
+    const ctx = canvas.getContext("2d");
+    // Flip horizontally to match the un-mirrored display
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0);
     canvas.toBlob(blob => {
       setFile(new File([blob], "capture.jpg", { type: "image/jpeg" }));
       setFileType("image");
@@ -749,7 +753,7 @@ export default function App() {
                   </div>
 
                   <div className="camera-view">
-                    <video ref={videoRef} autoPlay playsInline style={{ width: "100%" }} />
+                    <video ref={videoRef} autoPlay playsInline style={{ width: "100%", transform: "scaleX(-1)" }} />
                     <div className={`camera-overlay ${recording ? "recording" : ""}`} />
 
                     {/* Countdown overlay */}
