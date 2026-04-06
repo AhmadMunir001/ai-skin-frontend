@@ -91,6 +91,39 @@ const globalStyles = `
   .mode-btn.active { background: var(--rose); color: white; border-color: var(--rose); }
   .camera-controls { display: flex; gap: 10px; margin-bottom: 16px; }
 
+  /* IMAGE PREVIEW + ZOOM */
+  .preview-container { width: 100%; border-radius: 12px; overflow: hidden; border: 1.5px solid var(--border); background: #000; max-height: 320px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+  .preview-img { width: 100%; height: 320px; object-fit: contain; transform-origin: center; transition: transform 0.15s ease; }
+  .zoom-controls { display: flex; align-items: center; gap: 10px; padding: 8px 4px; }
+  .zoom-slider { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--border); outline: none; }
+  .zoom-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--rose); cursor: pointer; }
+  .zoom-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--rose); cursor: pointer; border: none; }
+
+  /* AI SCANNER ANIMATION */
+  .ai-scanner { margin-top: 20px; padding: 28px 20px; background: linear-gradient(135deg, #1a1208, #2d1f0f); border-radius: 16px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+  .scanner-pulse { position: relative; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
+  .scanner-ring { position: absolute; border-radius: 50%; border: 2px solid var(--rose); opacity: 0; animation: ring-expand 2.4s ease-out infinite; }
+  .scanner-ring.r1 { width: 80px; height: 80px; animation-delay: 0s; }
+  .scanner-ring.r2 { width: 80px; height: 80px; animation-delay: 0.8s; }
+  .scanner-ring.r3 { width: 80px; height: 80px; animation-delay: 1.6s; }
+  @keyframes ring-expand {
+    0%   { transform: scale(0.3); opacity: 0.9; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+  .scanner-core { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, var(--rose), var(--rose-dark)); display: flex; align-items: center; justify-content: center; font-family: 'Cormorant Garamond', serif; font-size: 14px; font-weight: 600; color: white; letter-spacing: 1px; z-index: 1; animation: core-glow 2s ease-in-out infinite; }
+  @keyframes core-glow {
+    0%, 100% { box-shadow: 0 0 12px rgba(196,119,106,0.4); }
+    50%       { box-shadow: 0 0 28px rgba(196,119,106,0.9); }
+  }
+  .scanner-step { display: flex; align-items: center; gap: 10px; animation: step-fade 0.4s ease-in-out; }
+  @keyframes step-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .scanner-step-icon { font-size: 22px; }
+  .scanner-step-text { font-size: 13px; color: rgba(255,255,255,0.85); letter-spacing: 0.3px; text-align: center; }
+  .scanner-progress { display: flex; gap: 6px; }
+  .scanner-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.2); transition: all 0.3s; }
+  .scanner-dot.active { background: var(--rose); transform: scale(1.4); }
+  .scanner-dot.done { background: rgba(196,119,106,0.5); }
+
   /* ANALYZE BTN */
   .analyze-btn { width: 100%; padding: 18px; background: linear-gradient(135deg, #c4776a, #8b3a2f); color: white; border: none; border-radius: 12px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: all 0.3s; }
   .analyze-btn:hover:not(:disabled) { background: linear-gradient(135deg, #d4877a, #9b4a3f); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(196,119,106,0.4); }
@@ -196,7 +229,21 @@ const globalStyles = `
   }
 `;
 
-// ── History Card Component ───────────────────────────
+const AI_STEPS = [
+  { icon: "🔍", text: "Detecting face landmarks…" },
+  { icon: "🧬", text: "Mapping skin regions (T-zone / U-zone)…" },
+  { icon: "💡", text: "Normalizing lighting & contrast…" },
+  { icon: "🔴", text: "Analyzing acne markers & comedones…" },
+  { icon: "✨", text: "Measuring oiliness via specular highlights…" },
+  { icon: "🌑", text: "Computing pigmentation index…" },
+  { icon: "🎨", text: "Calculating ITA skin tone angle…" },
+  { icon: "🌡️", text: "Running redness (R/G erythema) analysis…" },
+  { icon: "🔬", text: "Estimating pore size distribution…" },
+  { icon: "🧴", text: "Generating personalized K-beauty routine…" },
+  { icon: "✦", text: "Finalizing your clinical skin report…" },
+];
+
+
 function HistoryCard({ entry, index }) {
   const [open, setOpen] = useState(false);
   const sa = entry.skin_analysis || {};
@@ -485,6 +532,9 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [loadingStep, setLoadingStep] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraMode, setCameraMode] = useState("photo"); // "photo" | "video"
   const [recording, setRecording] = useState(false);
@@ -497,6 +547,26 @@ export default function App() {
   const pendingStreamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
+
+  // Cycle through AI steps while loading
+  useEffect(() => {
+    if (!loading) { setLoadingStep(0); return; }
+    const interval = setInterval(() => {
+      setLoadingStep(s => (s + 1) % AI_STEPS.length);
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [loading]);
+
+  // Generate preview URL when file is selected
+  useEffect(() => {
+    if (!file) { setPreviewUrl(null); setZoom(1); return; }
+    if (fileType === "image") {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      setZoom(1);
+      return () => URL.revokeObjectURL(url);
+    }
+  }, [file, fileType]);
 
   useEffect(() => {
     if (cameraOn && videoRef.current && pendingStreamRef.current) {
@@ -713,14 +783,62 @@ export default function App() {
 
               <canvas ref={canvasRef} style={{ display: "none" }} />
 
-              {file && !cameraOn && (
+              {/* Image preview with zoom */}
+              {previewUrl && !cameraOn && (
+                <div style={{ marginBottom: 16 }}>
+                  <div className="preview-container">
+                    <img
+                      src={previewUrl}
+                      alt="preview"
+                      className="preview-img"
+                      style={{ transform: `scale(${zoom})` }}
+                    />
+                  </div>
+                  <div className="zoom-controls">
+                    <span style={{ fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: "var(--muted)" }}>
+                      🔍 Zoom
+                    </span>
+                    <input
+                      type="range" min="1" max="3" step="0.1"
+                      value={zoom}
+                      onChange={e => setZoom(parseFloat(e.target.value))}
+                      className="zoom-slider"
+                    />
+                    <span style={{ fontSize: 12, color: "var(--muted)", minWidth: 32 }}>{zoom.toFixed(1)}×</span>
+                    <button className="btn-sm" style={{ padding: "4px 10px", fontSize: 11 }}
+                      onClick={() => setZoom(1)}>Reset</button>
+                  </div>
+                </div>
+              )}
+
+              {file && !cameraOn && !previewUrl && (
                 <div className="file-ready"><span>✅</span><span>{file.name} — ready to analyze</span></div>
               )}
 
               <button className="analyze-btn" onClick={() => handleAnalyze(fileType === "video")} disabled={loading}>
                 {loading ? <span className="loading-dots"><span/><span/><span/></span> : "✦  ANALYZE MY SKIN"}
               </button>
-              {status && <div className="status-bar">{status}</div>}
+
+              {/* AI Scanning Animation */}
+              {loading && (
+                <div className="ai-scanner">
+                  <div className="scanner-pulse">
+                    <div className="scanner-ring r1" />
+                    <div className="scanner-ring r2" />
+                    <div className="scanner-ring r3" />
+                    <div className="scanner-core">AI</div>
+                  </div>
+                  <div className="scanner-step">
+                    <span className="scanner-step-icon">{AI_STEPS[loadingStep].icon}</span>
+                    <span className="scanner-step-text">{AI_STEPS[loadingStep].text}</span>
+                  </div>
+                  <div className="scanner-progress">
+                    {AI_STEPS.map((_, i) => (
+                      <div key={i} className={`scanner-dot ${i === loadingStep ? "active" : i < loadingStep ? "done" : ""}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {result && <ResultsView result={result} />}
